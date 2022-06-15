@@ -1,0 +1,21 @@
+{
+  "name": "@polyglot-engine/start-translation",
+  "version": "1.0.0",
+  "description": "Gathers content from LibreTexts libraries according to job metadata and pre-processes it for translation.",
+  "main": "main.js",
+  "scripts": {},
+  "author": "LibreTexts <info@libretexts.org>",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.88.0",
+    "@aws-sdk/client-sqs": "^3.95.0",
+    "@aws-sdk/client-ssm": "^3.92.0",
+    "@aws-sdk/client-translate": "^3.54.1",
+    "async": "^3.2.3",
+    "axios": "^0.27.2",
+    "bluebird": "^3.7.2",
+    "cheerio": "^1.0.0-rc.10",
+    "dotenv": "^16.0.0"
+  }
+}

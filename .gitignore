@@ -1,0 +1,12 @@
+# Environments, Secrets, and API Keys
+.env
+keys.js
+
+# Packages
+node_modules/
+
+# macOS Files
+.DS_Store
+
+# ZIP/package files
+*.zip

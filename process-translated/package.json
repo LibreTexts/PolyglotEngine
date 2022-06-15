@@ -1,0 +1,18 @@
+{
+  "name": "@polyglot-engine/process-translated",
+  "version": "1.0.0",
+  "description": "Processes LibreTexts translated using AWS Translate and saves them to LibreTexts infrastructure.",
+  "main": "main.js",
+  "scripts": {},
+  "type": "module",
+  "author": "LibreTexts <info@libretexts.org>",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.88.0",
+    "@aws-sdk/client-ssm": "^3.92.0",
+    "async": "^3.2.3",
+    "axios": "^0.27.2",
+    "bluebird": "^3.7.2",
+    "cheerio": "^1.0.0-rc.10"
+  }
+}

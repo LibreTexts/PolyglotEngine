@@ -1,0 +1,14 @@
+{
+  "name": "@polyglot-engine/ignition",
+  "version": "1.0.0",
+  "description": "Validates request parameters and adds the job to the Polyglot Engine queue.",
+  "main": "main.js",
+  "scripts": {},
+  "author": "LibreTexts <info@libretexts.org>",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.95.0",
+    "@aws-sdk/client-ssm": "^3.92.0"
+  }
+}
