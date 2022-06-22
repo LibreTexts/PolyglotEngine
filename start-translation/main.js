@@ -132,6 +132,28 @@ function processTags(tagsObj) {
 }
 
 /**
+ * Attempts to determine a page's section numbering from the URL in order to preserve
+ * it upon recreation.
+ * 
+ * @param {string} path - The path of the current page relative to the library's hostname.
+ * @returns {[boolean, (string|undefined), (string|undefined)]} A 3-tuple containing: success flag,
+ *  section number URL prefix (if found), extracted section title, if found.
+ */
+function parsePagePath(path) {
+  if (typeof (path) === 'string') {
+    const splitPath = path.split('/');
+    const relativePath = splitPath[splitPath.length - 1];
+    const splitPagePath = relativePath.split('%3A');
+    const numberPart = splitPagePath[0];
+    if (splitPagePath.length > 1 && /(\d|zz)/.test(numberPart)) { // 'zz' back matter numbering
+      const titlePart = splitPagePath[1]?.replaceAll('_', ' ').trim();
+      return [true, numberPart, titlePart];
+    }
+  }
+  return [false];
+}
+
+/**
  * Retrieves the CXone Expert key-secret pair for a given library and initializes the
  * global variables for use with the Expert API.
  *
@@ -222,14 +244,20 @@ async function retrieveSubpages(lib, path, parent = null) {
       await snooze(5 * ONE_SECOND);
       foundSubpages = await Promise.all(subpagePromises);
     }
+    const [couldParse, sectionNum, sectionTitle] = parsePagePath(path);
     if (pageInfo && subpages) {
       let infoObj = {
-        lib,
         id: pageInfo['@id'],
         url: pageInfo['uri.ui'],
         title: pageInfo.title,
         tags: processTags(pageInfo.tags),
         subpages: foundSubpages,
+        lib,
+        path,
+        ...(couldParse && {
+          urlNumPrefix: sectionNum,
+          urlTitleExtract: sectionTitle,
+        }),
       };
       if (parent) {
         infoObj = { ...infoObj, root: false, parent };

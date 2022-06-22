@@ -26,10 +26,6 @@ let targetLibName;
 let targetLibKey;
 let targetLibSecret;
 
-/*
-  - [] url zero-padding not preserved
-*/
-
 /**
  * Object containing information about a CXone Expert page's special properties.
  *
@@ -52,6 +48,10 @@ let targetLibSecret;
  *  in the hierarchy (can be deeply nested).
  * @property {boolean} [root] - Indicates if the page is the starting page in a text's hierarchy.
  * @property {string} [parent] - Identifies the page's parent in the text hierarchy.
+ * @property {string} [url] - The source page's full URL.
+ * @property {string} [path] - The source page's path, relative to the library hostname.
+ * @property {string} [urlNumPrefix] - The source page's section number prefix (if found).
+ * @property {string} [urlTitleExtract] - The source page's extract section title (if found).
  * @property {string} [summary] - The page's overview/summary text.
  * @property {PageProp[]} [props] - The page's special properties.
  */
@@ -461,12 +461,17 @@ function mergeInputStructure(inputMetadata, translatedPages) {
       page.lib === inputPage.lib && page.id === inputPage.id
     ));
     if (foundInput !== undefined) {
+      const { root, parent, tags, props, path, urlNumPrefix, urlTitleExtract } = foundInput;
+      /* don't override translated metadata */
       return {
         ...page,
-        root: foundInput.root,
-        parent: foundInput.parent,
-        tags: foundInput.tags,
-        props: foundInput.props,
+        root,
+        parent,
+        tags,
+        props,
+        path,
+        urlNumPrefix,
+        urlTitleExtract,
       };
     }
     console.warn(`[MERGE STRUCTURE] WARNING: Matching pages not found for ${page.lib}-${page.id}`);
@@ -640,10 +645,23 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
     console.log(`[SAVE TRANSLATED PAGE] ${page.lib}-${page.id}`);
     const root = `https://${targetLib}.libretexts.org/@api/deki/pages/`;
     const reqTokenHeaders = generateAPIRequestHeaders(targetLib);
-    const pagePath = assembleUrl([targetPath, parentPath, page.title.trim()]);
+
+    const trimTitle = page.title.trim();
+    let newPagePath = trimTitle;
+    let newPageURLTitle = trimTitle;
+    if (isNonEmptyString(page.urlNumPrefix)) {
+      const splitTitle = newPageURLTitle.split(':');
+      if (splitTitle.length > 1) {
+        newPageURLTitle = splitTitle[1].trim();
+      }
+      newPagePath = `${page.urlNumPrefix}: ${newPageURLTitle}`;
+    }
+    newPagePath = newPagePath.replaceAll(' ', '_');
+    
+    const pagePath = assembleUrl([targetPath, parentPath, newPagePath]);
     const finalPath = encodeURIComponent(encodeURIComponent(pagePath));
     const createPageRes = await axiosInstance.post(
-      `${root}=${finalPath}/contents?edittime=now&abort=exists&dream.out.format=json`,
+      `${root}=${finalPath}/contents?title=${encodeURIComponent(trimTitle)}&edittime=now&abort=exists&dream.out.format=json`,
       page.contents.trim(),
       {
         headers: {
@@ -669,7 +687,7 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
     if (Array.isArray(page.subpages)) {
       await async.eachLimit(page.subpages, MAX_CONCURRENT, async (subpage) => {
         const subpathData = {
-          parentPath: assembleUrl([parentPath, page.title.trim()]),
+          parentPath: assembleUrl([parentPath, newPagePath]),
           targetLib,
           targetPath,
         };
@@ -687,7 +705,7 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
   } catch (e) {
     console.error('[SAVE TRANSLATED PAGE] Error encountered while saving page:');
     console.error(JSON.stringify(e, null, 2));
-    console.log(JSON.stringify(e.response?.data, null, 2));
+    console.error(JSON.stringify(e.response?.data, null, 2));
   }
   return false;
 }
