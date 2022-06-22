@@ -118,14 +118,20 @@ function parseURL(url) {
  */
 function processTags(tagsObj) {
   const processed = [];
+
+  const processSingle = (singleTag) => {
+    if (typeof (singleTag['@value']) === 'string') {
+      processed.push(singleTag['@value']);
+    }
+  };
+
   if (typeof (tagsObj) === 'object') {
     if (Array.isArray(tagsObj.tag) && tagsObj.tag.length > 0) {
       for (let i = 0, n = tagsObj.tag.length; i < n; i += 1) {
-        const currTag = tagsObj.tag[i];
-        if (typeof (currTag['@value']) === 'string') {
-          processed.push(currTag['@value']);
-        }
+        processSingle(tagsObj.tag[i]);
       }
+    } else if (typeof (tagsObj.tag) === 'object') { // single tag
+      processSingle(tagsObj.tag);
     }
   }
   return processed;
