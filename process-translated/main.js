@@ -12,6 +12,7 @@ import bluebird from 'bluebird';
 import * as cheerio from 'cheerio';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
+import { TranslateClient, DescribeTextTranslationJobCommand } from '@aws-sdk/client-translate';
 
 const Promise = bluebird;
 const LIBREBOT = 'LibreBot';
@@ -237,6 +238,41 @@ async function retrieveLibraryParameters(src = false) {
     console.error(e);
   }
   return false;
+}
+
+/**
+ * Queries the Translate API for the S3 URI of the translation job's output details file.
+ * 
+ * @param {string} jobID - The internal Translate job identifier.
+ * @returns {Promise<string|null>} The output file S3 URI, or null if error encountered.
+ */
+async function getTranslationDetailsURI(jobID) {
+  if (!isNonEmptyString(jobID)) {
+    console.error(`[RETRIEVE JOB FILE] Invalid jobID provided: "${jobID}".`);
+  }
+  console.log('[RETRIEVE JOB FILE] Retrieving translation job output URI...');
+  try {
+    const transClient = new TranslateClient({
+      credentials: {
+        accessKeyId: process.env.AWS_TRANS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_TRANS_SECRET_ACCESS_KEY,
+      },
+      region: process.env.AWS_ENGINE_REGION,
+    });
+    const details = await transClient.send(new DescribeTextTranslationJobCommand({
+      JobId: jobID,
+    }));
+    if (details.$metadata.httpStatusCode !== 200) {
+      throw (new Error('Unknown error encountered using Translate API.'));
+    }
+    const outputFolder = details.TextTranslationJobProperties.OutputDataConfig.S3Uri;
+    const outputLangCode = details.TextTranslationJobProperties.TargetLanguageCodes;
+    return `${outputFolder}details/${outputLangCode}.auxiliary-translation-details.json`;
+  } catch (e) {
+    console.error('[RETRIEVE JOB FILE] Error retrieving job output URI:');
+    console.error(e);
+    return null;
+  }
 }
 
 /**
@@ -713,12 +749,12 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
 /**
  * Main driver function for processing translated content and saving it to a LibreText library.
  *
- * @param {object} event - The Lambda trigger event.
+ * @param {object} eventDetails - The Lambda trigger event details.
  * @returns {Promise<boolean>} True if process succeeded, false otherwise.
  */
-async function processTranslated(event) {
-  if (!isNonEmptyString(event?.s3?.object?.key)) {
-    console.error('[PROCESS TRANSLATED] Initating object key not found or invalid.');
+async function processTranslated(eventDetails) {
+  if (!isNonEmptyString(eventDetails.jobId)) {
+    console.error('[PROCESS TRANSLATED] Initating job identifier found or invalid.');
     return false;
   }
   if (!axiosInstance) {
@@ -726,7 +762,11 @@ async function processTranslated(event) {
       httpsAgent: new https.Agent({ keepAlive: true }),
     });
   }
-  const detailsFileKey = event.s3.object.key;
+
+  const transOutputURI = await getTranslationDetailsURI(eventDetails.jobId);
+  if (transOutputURI === null) {
+    return false; // error logged in previous call
+  }
   const s3Client = new S3Client({
     credentials: {
       accessKeyId: process.env.AWS_S3_ACCESS_KEY_ID,
@@ -734,7 +774,7 @@ async function processTranslated(event) {
     },
     region: process.env.AWS_ENGINE_REGION,
   });
-  const jobMetadata = await retrieveTranslationJobDetails(s3Client, detailsFileKey);
+  const jobMetadata = await retrieveTranslationJobDetails(s3Client, transOutputURI);
   if (jobMetadata === null) {
     return false; // error logged in previous call
   }
@@ -780,9 +820,9 @@ async function processTranslated(event) {
  * @returns {Promise<boolean>} True if process succeeded, false otherwise.
  */
 export default async function translatedEventHandler(event) {
-  if (!event || !event.Records[0]) {
+  if (!event || !event.detail || event.detail.jobStatus !== 'COMPLETED') {
     console.error('[HANDLER] Event information is invalid or missing.');
     return false;
   }
-  return processTranslated(event.Records[0]);
+  return processTranslated(event.detail);
 }
