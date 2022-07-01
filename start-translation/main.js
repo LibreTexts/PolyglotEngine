@@ -239,17 +239,23 @@ async function retrieveSubpages(lib, path, parent = null) {
     });
     const subpages = subpagesRes.data;
     await snooze(15 * ONE_SECOND);
-    let foundSubpages = [];
+
+    /* Keep walking the tree */
+    const subpagePromises = [];
+    const addSubpage = (currentSubpage) => {
+      const [subLib, subPath] = parseURL(currentSubpage['uri.ui']);
+      subpagePromises.push(retrieveSubpages(subLib, subPath, pageInfo['@id']));
+    };
     if (Array.isArray(subpages['page.subpage'])) {
-      const subpagePromises = [];
       for (let i = 0, n = subpages['page.subpage'].length; i < n; i += 1) {
-        const currentSubpage = subpages['page.subpage'][i];
-        const [subLib, subPath] = parseURL(currentSubpage['uri.ui']);
-        subpagePromises.push(retrieveSubpages(subLib, subPath, pageInfo['@id']));
+        addSubpage(subpages['page.subpage'][i]);
       }
-      await snooze(5 * ONE_SECOND);
-      foundSubpages = await Promise.all(subpagePromises);
+    } else if (typeof (subpages['page.subpage']) === 'object') { // single subpage
+      addSubpage(subpages['page.subpage']);
     }
+    await snooze(5 * ONE_SECOND);
+    const foundSubpages = await Promise.all(subpagePromises);
+
     const [couldParse, sectionNum, sectionTitle] = parsePagePath(path);
     if (pageInfo && subpages) {
       let infoObj = {
