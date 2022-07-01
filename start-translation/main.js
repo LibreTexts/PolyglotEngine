@@ -10,7 +10,7 @@ import * as https from 'https';
 import axios from 'axios';
 import async from 'async';
 import bluebird from 'bluebird';
-// import * as cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
 import { SQSClient, DeleteMessageCommand } from '@aws-sdk/client-sqs';
@@ -21,6 +21,9 @@ const LIBREBOT = 'LibreBot';
 const ONE_SECOND = 1000;
 const MAX_CONCURRENT = 2;
 const ENGLISH_LANG_CODE = 'en';
+const CROSS_LIB_REGEX = /(<p class="mt-script-comment">Cross Library Transclusion<\/p>\s+<pre class="script">\s+template\('CrossTransclude\/Web',)[\S\s]*?(\);<\/pre>)/g;
+const WIKI_TEMPL_REGEX = /(<pre class="script">\s*?wiki.page\(&quot;)[\S\s]*?(&quot;\)\s*?<\/pre>)/g; // local reuse
+const REUSE_TEMPL_REGEX = /(<div class="mt-contentreuse-widget")[\S\s]*?(<\/div>)/g; // local reuse
 
 let axiosInstance;
 let sourceLibKey;
@@ -50,10 +53,12 @@ let sourceLibSecret;
  * @property {string} lib - The internal LibreTexts library shortname/identifier.
  * @property {number} id - The page identifier number.
  * @property {string} url - The human-friendly URL of the page.
+ * @property {string} path - The URL of the page, relative to the library hostname.
  * @property {string} title - The page's UI title.
  * @property {string[]} tags - An array of a page's tags and their values.
  * @property {LibrePage[]} subpages - An array of "subpages" underneath the page
  *  in the hierarchy (can be deeply nested).
+ * @property {boolean} [forked] - Indicates the page was forked from transcluded content.
  * @property {string} [contents] - The HTML contents of the page.
  * @property {string} [summary] - The page's overview/summary text.
  * @property {PageProp[]} [props] - The page's special properties.
@@ -354,8 +359,43 @@ async function getPageContent(page, tokenHeaders) {
       const pageContentRes = await axiosInstance.get(`https://${page.lib}.libretexts.org/@api/deki/pages/${page.id}/contents?mode=edit&format=html&dream.out.format=json`, {
         headers: reqHeaders,
       });
-      return pageContentRes?.data?.body;
+      if (typeof (pageContentRes?.data?.body) !== 'string') {
+        throw (new Error('Invalid page body returned.'));
+      }
+      let contents = pageContentRes.data.body;
+
+      /* Fork transcluded content, if necessary */
+      if (
+        page.tags.includes('transcluded:yes')
+        || contents.match(CROSS_LIB_REGEX)
+        || contents.match(WIKI_TEMPL_REGEX)
+        || contents.match(REUSE_TEMPL_REGEX)
+      ) {
+        console.log(`[CONTENT] Forking ${page.lib}-${page.id}`);
+        const forkReq = await axiosInstance.put(`https://api.libretexts.org/elevate/fork`, {
+          subdomain: page.lib,
+          path: page.path,
+          readOnly: true,
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.LIBRE_API_FORK_KEY}`,
+          }
+        });
+        if (typeof (forkReq?.data?.contents) === 'string') {
+          contents = forkReq.data.contents.trim();
+          page.forked = true;
+          console.log(`[CONTENT] Using forked content for ${page.lib}-${page.id}`);
+        }
+        if (Array.isArray(forkReq?.data?.tags) && forkReq.data.tags.length > 0) {
+          page.tags = forkReq.data.tags;
+          console.log(`[CONTENT] Using forked tags for ${page.lib}-${page.id}`);
+        }
+      }
+
+      return contents;
     } catch (e) {
+      console.error(`[CONTENT] Error retrieving contents of ${page.lib}-${page.id}`);
       console.error(e);
     }
   }
@@ -394,22 +434,6 @@ async function getSubpageContents(page, tokenHeaders) {
   return currPage;
 }
 
-/*
-function processElement($, elem) {
-  const mathInlineRegex = /\\\(.*?(?<!\\\\)\\\)/gmi;
-  const mathDisplayRegex = /\\\[.*?(?<!\\\\)\\\]/gmi;
-  let elemHtml = $(elem).html();
-  elemHtml = elemHtml.replaceAll(mathInlineRegex, (match) =>
-  `<span translate='no'>${match}</span>`);
-  elemHtml = elemHtml.replaceAll(mathDisplayRegex, (match) =>
-  `<span translate='no'>${match}</span>`);
-  $(elem).html(elemHtml);
-  if ($(elem).children().length > 0) {
-    $(elem).children().each((_i, child) => processElement($, child));
-  }
-}
-*/
-
 /**
  * Recursively performs pre-processing on the page's (and subpages') contents.
  *
@@ -436,50 +460,23 @@ async function processPageContents(page) {
       const dekiRegex = /{{([A-Za-z.()]*)}}/gmi;
       const mathInlineRegex = /\\\(.*?(?<!\\\\)\\\)/gmi;
       const mathDisplayRegex = /\\\[.*?(?<!\\\\)\\\]/gmi;
-      const noTranslateDiv = (match) => `<div translate="no">${match}</div>`;
       const noTranslateSpan = (match) => `<span translate="no">${match}</span>`;
-      contents = contents.replaceAll(dekiRegex, noTranslateDiv);
       contents = contents.replaceAll(mathInlineRegex, noTranslateSpan);
       contents = contents.replaceAll(mathDisplayRegex, noTranslateSpan);
-      /*
-      $('body').html(bodyHTML.trim());
-      const $ = cheerio.load(contents, { decodeEntities: true });
-      let bodyHTML = $('body').html();
-      if (bodyHTML) {
-        const dekiRegex = /{{([A-Za-z.()]*)}}/gmi;
-        const mathInlineRegex = /\\\(.*?(?<!\\\\)\\\)/gmi;
-        const mathDisplayRegex = /\\\[.*?(?<!\\\\)\\\]/gmi;
-        const noTranslateDiv = (match) => `<div translate="no">${match}</div>`;
-        const noTranslateSpan = (match) => `<span translate="no">${match}</span>`;
-        bodyHTML = bodyHTML.replaceAll(dekiRegex, noTranslateDiv);
-        bodyHTML = bodyHTML.replaceAll(mathInlineRegex, noTranslateSpan);
-        bodyHTML = bodyHTML.replaceAll(mathDisplayRegex, noTranslateSpan);
-        $('body').html(bodyHTML.trim());
-      }
-      $('body').children().each((_i, elem) => processElement($, elem));
-      console.log('DONE PROCESS');
+      const $ = cheerio.load(contents, { decodeEntities: true }, false);
       $('*').each((_idx, elem) => {
-        const elemHtml = $(elem).html();
-        const dekiRegex = /{{([A-Za-z.()]*)}}/gmi;
-        if (dekiRegex.test(elemHtml)) {
+        if ($(elem).html().match(dekiRegex)) {
           $(elem).attr('translate', 'no');
         }
       });
-      $('p,span,div').each((_idx, elem) => {
-        const mathInlineRegex = /\\\(.*?(?<!\\\\)\\\)/gmi;
-        const mathDisplayRegex = /\\\[.*?(?<!\\\\)\\\]/gmi;
-        let elemHtml = $(elem).html();
-        elemHtml = elemHtml.replaceAll(mathInlineRegex,
-          (match) => `<span translate='no'>${match}</span>`);
-        elemHtml = elemHtml.replaceAll(mathDisplayRegex,
-          (match) => `<span translate='no'>${match}</span>`);
-        $(elem).html(elemHtml);
-      });
-      $('pre').each((_idx, elem) => {
+      $('pre, .script, .mt-script-comment, .comment, .mt-style-conditional').each((_idx, elem) => {
         $(elem).attr('translate', 'no');
       });
-      */
-      pageData.contents = contents;
+      /* Remove legacy 'fileid' attributes on images */
+      $('img[fileid]').each((_idx, elem) => {
+        $(elem).removeAttr('fileid');
+      });
+      pageData.contents = $.html().trim();
     } catch (e) {
       console.error(`[PROCESS CONTENTS] Error processing ${pageData?.lib}-${pageData?.id}:`);
       console.error(e);
