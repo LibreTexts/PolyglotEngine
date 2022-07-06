@@ -208,7 +208,7 @@ async function retrieveLibraryParameters(src = false) {
     console.log(`[RETRIEVE PARAMS] ${lib}`);
     const ssmClient = new SSMClient();
     const keysResponse = await ssmClient.send(new GetParametersByPathCommand({
-      Path: process.env.AWS_SSM_LIB_SERVERKEYS_PATH,
+      Path: `${process.env.AWS_SSM_LIB_SERVERKEYS_PATH}${lib}`,
       MaxResults: 10,
       Recursive: true,
       WithDecryption: true,
