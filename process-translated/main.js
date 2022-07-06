@@ -127,7 +127,8 @@ function createTagsXML(tags) {
   }
   let tagValues = '';
   tags.forEach((tag) => {
-    tagValues += `<tag value="${tag}" />`;
+    const tagEscaped = tag.replace(/&/g, '&amp;');
+    tagValues = `${tagValues}<tag value="${tagEscaped}" />`;
   });
   return `<?xml version="1.0" encoding="UTF-8"?><tags>${tagValues}</tags>`;
 }
