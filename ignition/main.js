@@ -96,6 +96,7 @@ async function verifyAuthorization(headers) {
 function validateEventParams(queryParams) {
   console.log('[VERIFY PARAMS]');
   const validationErrors = [];
+  const notifyAddrs = [];
   if (typeof (queryParams) !== 'object' || !queryParams) {
     validationErrors.push('Invalid parameters object provided.');
   }
@@ -107,6 +108,17 @@ function validateEventParams(queryParams) {
   }
   if (typeof (queryParams.language) !== 'string' || queryParams.language.trim().length < 1) {
     validationErrors.push('Language code not provided or invalid.');
+  }
+  if (typeof (queryParams.notify) === 'string') {
+    const inputAddrs = queryParams.notify.split(',');
+    inputAddrs.forEach((email) => {
+      const trimmed = email.trim();
+      if (email.includes('@') && trimmed.length > 0) {
+        notifyAddrs.push(trimmed);
+      } else {
+        validationErrors.push(`Provided address ${email} is invalid.`);
+      }
+    });
   }
   const [lib, path] = parseURL(queryParams.url);
   const [targetLib, targetPath] = parseURL(queryParams.targetpath);
@@ -127,6 +139,7 @@ function validateEventParams(queryParams) {
     path,
     targetLib,
     targetPath,
+    notifyAddrs,
   };
   return [!errorsFound, validationErrors, foundParams];
 }

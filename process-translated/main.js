@@ -11,6 +11,7 @@ import axios from 'axios';
 import bluebird from 'bluebird';
 import * as cheerio from 'cheerio';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
 import { TranslateClient, DescribeTextTranslationJobCommand } from '@aws-sdk/client-translate';
 
@@ -397,6 +398,63 @@ async function retrieveInputMetadata(s3Client, filename) {
 }
 
 /**
+ * Sends a completion message to the email addresses specified in the original
+ * translation request, if applicable.
+ *
+ * @param {string[]} notifyAddrs - Email addresses to send the message to.
+ * @param {string} sourceLib - The LibreTexts library shortname of the original content.
+ * @param {string} sourceID - The pageID of the original content root.
+ * @param {string} targetLib - The LibreTexts library shortname the content was saved to.
+ * @param {string} targetPath - The root path the content was saved under.
+ * @return {Promise<boolean>} True if message(s) were sent (or no emails specified),
+ *  false otherwise.
+ */
+async function sendCompletionNotification(notifyAddrs, sourceLib, sourceID, targetLib, targetPath) {
+  if (!Array.isArray(notifyAddrs) || notifyAddrs.length < 1) {
+    return true;
+  }
+  try {
+    const origTextLink = `https://${sourceLib}.libretexts.org/@go/page/${sourceID}`;
+    const trnsTextLink = assembleUrl([`https://${targetLib}.libretexts.org/`, targetPath]);
+    const sesClient = new SESv2Client();
+    const emailRes = await sesClient.send(new SendEmailCommand({
+      Content: {
+        Simple: {
+          Subject: {
+            Data: 'Polyglot Engine: Text Translation Complete',
+          },
+          Body: {
+            Html: {
+              Data: `
+                <p>The Polyglot Engine has finished processing your request to translate 
+                  <a href="${origTextLink}" target="_blank" rel="noopener noreferrer">${sourceLib}-${sourceID}</a>.
+                </p>
+                <p>The translated text should now be available under: 
+                  <a href="${trnsTextLink}" target="_blank" rel="noopener noreferrer">${trnsTextLink}</a>.
+                </p>
+              `,
+            }
+          }
+        },
+      },
+      Destination: {
+        ToAddresses: notifyAddrs,
+      },
+      FromEmailAddress: process.env.NOTIFY_FROM_ADDR,
+    }));
+    if (emailRes.$metadata.httpStatusCode !== 200) {
+      console.warn('[SEND NOTIFICATION] Error returned from SES API.'); 
+      return false;
+    }
+  } catch (e) {
+    console.warn('[SEND NOTIFICATION] Error sending a completion notification:');
+    console.warn(e);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Retrieves translated content from S3 and performs post-translation processing on the content.
  *
  * @param {S3Client} s3Client - An insantiated S3Client object.
@@ -748,7 +806,7 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
 }
 
 /**
- * Main driver function for processing translated content and saving it to a LibreText library.
+ * Main driver function for processing translated content and saving it to a LibreTexts library.
  *
  * @param {object} eventDetails - The Lambda trigger event details.
  * @returns {Promise<boolean>} True if process succeeded, false otherwise.
@@ -780,14 +838,18 @@ async function processTranslated(eventDetails) {
     return false; // error logged in previous call
   }
   const { details, lib, id } = jobMetadata;
-  const coverID = `${lib}-${id}`;
-  const inputMetadata = await retrieveInputMetadata(s3Client, `${coverID}/${coverID}.metadata.json`);
+  const sourceCoverID = `${lib}-${id}`;
+  const inputMetadata = await retrieveInputMetadata(
+    s3Client,
+    `${sourceCoverID}/${sourceCoverID}.metadata.json`,
+  );
   if (inputMetadata === null) {
     return false; // error logged in previous call
   }
 
-  sourceLibName = inputMetadata.lib;
-  targetLibName = inputMetadata.targetLib;
+  const { lib: sourceLib, targetLib, targetPath, notifyAddrs } = inputMetadata;
+  sourceLibName = sourceLib;
+  targetLibName = targetLib;
   const srcParams = await retrieveLibraryParameters(true);
   const trgtParams = await retrieveLibraryParameters();
   if (!srcParams || !trgtParams) {
@@ -803,10 +865,11 @@ async function processTranslated(eventDetails) {
   );
   const pageStructure = mergeInputStructure(inputMetadata, translatedPages);
   const saveSuccess = await saveToLibrary(pageStructure, {
-    targetLib: inputMetadata.targetLib,
-    targetPath: inputMetadata.targetPath,
+    targetLib,
+    targetPath,
   });
   if (saveSuccess) {
+    await sendCompletionNotification(notifyAddrs, lib, id, targetLib, targetPath);
     console.log('[PROCESS TRANSLATED] Successfuly processed translated text.');
   } else {
     console.error('[PROCESS TRANSLATED] Error encountered saving translated text.');

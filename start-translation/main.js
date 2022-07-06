@@ -555,9 +555,11 @@ function createUploadCommands(page, directory) {
  *  translated text to.
  * @param {string} target.targetPath - The path to save the translated text under
  *  (relative to targetLib).
+ * @param {string[]} [notifyAddrs] - An array of email addresses to notify when the
+ *  engine run has completed.
  * @returns {Promise<boolean>} Whether the upload(s) succeeded.
  */
-async function uploadLibreText(page, { targetLib, targetPath }) {
+async function uploadLibreText(page, { targetLib, targetPath }, notifyAddrs) {
   if (page === null || typeof (page) !== 'object') return false;
   let uploadSuccess = true;
   const s3Client = new S3Client({
@@ -588,6 +590,7 @@ async function uploadLibreText(page, { targetLib, targetPath }) {
         allPages: flatMetadata,
         targetLib,
         targetPath,
+        notifyAddrs,
       };
       await s3Client.send(new PutObjectCommand({
         Bucket: process.env.AWS_S3_OUTPUT_BUCKET,
@@ -706,10 +709,12 @@ async function startTranslation(event) {
   console.log('[PROCESS CONTENTS] Finished content pre-processing.');
 
   console.log('[LIBRETEXT UPLOAD] Uploading page contents to S3...');
-  await uploadLibreText(subpageResults, {
-    targetLib: reqParams.targetLib,
-    targetPath: reqParams.targetPath,
-  });
+  const { targetLib, targetPath, notifyAddrs } = reqParams;
+  await uploadLibreText(
+    subpageResults,
+    { targetLib, targetPath },
+    notifyAddrs,
+  );
   console.log('[LIBRETEXT UPLOAD] Finished uploading content to S3.');
 
   console.log('[START TRANSLATION JOB] Submitting translation job...');
