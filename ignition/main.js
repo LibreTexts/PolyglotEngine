@@ -6,6 +6,8 @@
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 
+let reqOrigin;
+
 /**
  * Verifies that a variable is a string and is non-empty (when whitespace is removed).
  *
@@ -42,11 +44,18 @@ function parseURL(url) {
  * @returns {object} The finalized response object.
  */
 function generateHTTPResponse(status, msg) {
+  let allowOrigin = false;
+  if (typeof (reqOrigin) === 'string' && reqOrigin.endsWith('.libretexts.org')) {
+    allowOrigin = true;
+  }
   return {
     body: JSON.stringify({ status, msg }),
     statusCode: status.toString(),
     headers: {
       'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': allowOrigin ? reqOrigin : 'https://api.libretexts.org',
+      'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
     },
   };
 }
@@ -154,6 +163,12 @@ function validateEventParams(queryParams) {
  */
 async function engineIgnition(event) {
   console.log('[ENGINE IGNITION] Attempting request ignition...');
+
+  reqOrigin = event.headers?.origin;
+  if (event.httpMethod === 'OPTIONS') {
+    return generateHTTPResponse(200, 'Polyglot Engine: Preflight request succeeded.');
+  }
+
   const authorized = await verifyAuthorization(event.headers);
   if (!authorized) {
     console.error('Fatal Error: Unauthorized Request.');
