@@ -165,6 +165,25 @@ function parsePagePath(path) {
 }
 
 /**
+ * Replaces relative references to the CXone Expert file API with absolute paths
+ * to the library's file storage.
+ *
+ * @param {string} contents - Page contents to absolutify.
+ * @param {string} library - Internal LibreTexts library identifier.
+ * @returns {string} Page contents with any CXone Expert file API URLs absolutified.
+ */
+function absolutifyFileURLs(contents, library) {
+  if (!contents || !library) {
+    console.log('[ABSOLUTIFY URLS] Warning: unrecognizable data passed to function.');
+    return contents;
+  }
+  return contents.replace(
+    /"\/@api\/deki\/files\//g,
+    `"https://${library}.libretexts.org/@api/deki/files/`,
+  );
+}
+
+/**
  * Retrieves the CXone Expert key-secret pair for a given library and initializes the
  * global variables for use with the Expert API.
  *
@@ -446,6 +465,7 @@ async function processPageContents(page) {
     console.log(`[PROCESS CONTENTS] ${page.lib}-${page.id}`);
     try {
       let { contents } = pageData;
+      contents = absolutifyFileURLs(contents, pageData.lib);
       contents = `
         <span
           data-libre-pagetitle="true"
