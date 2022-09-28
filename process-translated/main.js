@@ -244,7 +244,7 @@ async function retrieveLibraryParameters(src = false) {
 
 /**
  * Queries the Translate API for the S3 URI of the translation job's output details file.
- * 
+ *
  * @param {string} jobID - The internal Translate job identifier.
  * @returns {Promise<string|null>} The output file S3 URI, or null if error encountered.
  */
@@ -406,7 +406,7 @@ async function retrieveInputMetadata(s3Client, filename) {
  * @param {string} sourceID - The pageID of the original content root.
  * @param {string} targetLib - The LibreTexts library shortname the content was saved to.
  * @param {string} targetPath - The root path the content was saved under.
- * @return {Promise<boolean>} True if message(s) were sent (or no emails specified),
+ * @returns {Promise<boolean>} True if message(s) were sent (or no emails specified),
  *  false otherwise.
  */
 async function sendCompletionNotification(notifyAddrs, sourceLib, sourceID, targetLib, targetPath) {
@@ -433,8 +433,8 @@ async function sendCompletionNotification(notifyAddrs, sourceLib, sourceID, targ
                   <a href="${trnsTextLink}" target="_blank" rel="noopener noreferrer">${trnsTextLink}</a>.
                 </p>
               `,
-            }
-          }
+            },
+          },
         },
       },
       Destination: {
@@ -443,7 +443,7 @@ async function sendCompletionNotification(notifyAddrs, sourceLib, sourceID, targ
       FromEmailAddress: process.env.NOTIFY_FROM_ADDR,
     }));
     if (emailRes.$metadata.httpStatusCode !== 200) {
-      console.warn('[SEND NOTIFICATION] Error returned from SES API.'); 
+      console.warn('[SEND NOTIFICATION] Error returned from SES API.');
       return false;
     }
   } catch (e) {
@@ -556,7 +556,15 @@ function mergeInputStructure(inputMetadata, translatedPages) {
       page.lib === inputPage.lib && page.id === inputPage.id
     ));
     if (foundInput !== undefined) {
-      const { root, parent, tags, props, path, urlNumPrefix, urlTitleExtract } = foundInput;
+      const {
+        root,
+        parent,
+        tags,
+        props,
+        path,
+        urlNumPrefix,
+        urlTitleExtract,
+      } = foundInput;
       /* don't override translated metadata */
       return {
         ...page,
@@ -752,7 +760,7 @@ async function saveToLibrary(page, { targetLib, targetPath, parentPath = '' }) {
       newPagePath = `${page.urlNumPrefix}: ${newPageURLTitle}`;
     }
     newPagePath = newPagePath.replaceAll(' ', '_');
-    
+
     const pagePath = assembleUrl([targetPath, parentPath, newPagePath]);
     const finalPath = encodeURIComponent(encodeURIComponent(pagePath));
     const createPageRes = await axiosInstance.post(
@@ -847,7 +855,12 @@ async function processTranslated(eventDetails) {
     return false; // error logged in previous call
   }
 
-  const { lib: sourceLib, targetLib, targetPath, notifyAddrs } = inputMetadata;
+  const {
+    lib: sourceLib,
+    targetLib,
+    targetPath,
+    notifyAddrs,
+  } = inputMetadata;
   sourceLibName = sourceLib;
   targetLibName = targetLib;
   const srcParams = await retrieveLibraryParameters(true);
