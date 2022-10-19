@@ -145,7 +145,7 @@ function processTags(tagsObj) {
 /**
  * Attempts to determine a page's section numbering from the URL in order to preserve
  * it upon recreation.
- * 
+ *
  * @param {string} path - The path of the current page relative to the library's hostname.
  * @returns {[boolean, (string|undefined), (string|undefined)]} A 3-tuple containing: success flag,
  *  section number URL prefix (if found), extracted section title, if found.
@@ -391,15 +391,15 @@ async function getPageContent(page, tokenHeaders) {
         || contents.match(REUSE_TEMPL_REGEX)
       ) {
         console.log(`[CONTENT] Forking ${page.lib}-${page.id}`);
-        const forkReq = await axiosInstance.put(`https://api.libretexts.org/elevate/fork`, {
+        const forkReq = await axiosInstance.put('https://api.libretexts.org/elevate/fork', {
           subdomain: page.lib,
           path: page.path,
           readOnly: true,
         }, {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.LIBRE_API_FORK_KEY}`,
-          }
+            Authorization: `Bearer ${process.env.LIBRE_API_FORK_KEY}`,
+          },
         });
         if (typeof (forkReq?.data?.contents) === 'string') {
           contents = forkReq.data.contents.trim();
@@ -657,9 +657,9 @@ async function initiateTranslationJob(coverID, outLangCode) {
         ContentType: 'text/html',
         S3Uri: `s3://${process.env.AWS_S3_INPUT_BUCKET}/${coverID}/`,
       },
-      JobName: coverID,
+      JobName: `${coverID}-${outLangCode}`,
       OutputDataConfig: {
-        S3Uri: `s3://${process.env.AWS_S3_OUTPUT_BUCKET}/${coverID}/`,
+        S3Uri: `s3://${process.env.AWS_S3_OUTPUT_BUCKET}/${outLangCode}/${coverID}/`,
       },
       SourceLanguageCode: ENGLISH_LANG_CODE,
       TargetLanguageCodes: [outLangCode],
