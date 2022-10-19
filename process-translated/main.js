@@ -10,6 +10,7 @@ import async from 'async';
 import axios from 'axios';
 import bluebird from 'bluebird';
 import * as cheerio from 'cheerio';
+import xmlEscape from 'xml-escape';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
@@ -126,11 +127,7 @@ function createTagsXML(tags) {
   if (!Array.isArray(tags)) {
     throw (new Error('Invalid tags provided.'));
   }
-  let tagValues = '';
-  tags.forEach((tag) => {
-    const tagEscaped = tag.replace(/&/g, '&amp;');
-    tagValues = `${tagValues}<tag value="${tagEscaped}" />`;
-  });
+  const tagValues = tags.map((tag) => `<tag value="${xmlEscape(tag)}" />`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?><tags>${tagValues}</tags>`;
 }
 
